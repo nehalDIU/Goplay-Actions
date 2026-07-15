@@ -1,0 +1,54 @@
+name: Sync Mrgify BDIX IPTV Channels
+
+on:
+  schedule:
+    # Run every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    # Allow manual triggering of the workflow
+
+jobs:
+  sync:
+    name: Sync Mrgify M3U to Supabase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip' # Cache pip packages for faster runs
+
+      - name: Restore last hash cache
+        uses: actions/cache/restore@v4
+        with:
+          path: last_hash_mrgify.txt
+          key: mrgify-sync-hash-${{ github.run_number }}
+          restore-keys: |
+            mrgify-sync-hash-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run synchronization script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_SECRET_TOKEN: ${{ secrets.ADMIN_SECRET_TOKEN }}
+          M3U_URL: https://github.com/abusaeeidx/Mrgify-BDIX-IPTV/raw/refs/heads/main/playlist.m3u
+          CATEGORY_ID: Mrgify-BDIX-IPTV
+          HASH_FILE: last_hash_mrgify.txt
+          CHECK_CHANNELS: "true"
+        run: python main.py
+
+      - name: Save last hash cache
+        uses: actions/cache/save@v4
+        if: success() # Save the cache only if the sync succeeds
+        with:
+          path: last_hash_mrgify.txt
+          key: mrgify-sync-hash-${{ github.run_number }}

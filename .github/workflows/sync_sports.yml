@@ -1,0 +1,97 @@
+name: Sync FanCode and Tapmad Channels
+
+on:
+  schedule:
+    # Run every 1 hour (at minute 0 of every hour)
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    # Allow manual triggering of the workflow
+
+jobs:
+  sync-fancode:
+    name: Sync FanCode
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Restore last hash cache
+        uses: actions/cache/restore@v4
+        with:
+          path: last_hash_fancode.txt
+          key: fancode-sync-hash-${{ github.run_number }}
+          restore-keys: |
+            fancode-sync-hash-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run synchronization script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_SECRET_TOKEN: ${{ secrets.ADMIN_SECRET_TOKEN }}
+          M3U_URL: https://raw.githubusercontent.com/srhady/Fancode-bd/main/main_playlist.m3u
+          CATEGORY_ID: fancode
+          HASH_FILE: last_hash_fancode.txt
+        run: python main.py
+
+      - name: Save last hash cache
+        uses: actions/cache/save@v4
+        if: success()
+        with:
+          path: last_hash_fancode.txt
+          key: fancode-sync-hash-${{ github.run_number }}
+
+  sync-tapmad:
+    name: Sync Tapmad
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Restore last hash cache
+        uses: actions/cache/restore@v4
+        with:
+          path: last_hash_tapmad.txt
+          key: tapmad-sync-hash-${{ github.run_number }}
+          restore-keys: |
+            tapmad-sync-hash-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run synchronization script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_SECRET_TOKEN: ${{ secrets.ADMIN_SECRET_TOKEN }}
+          M3U_URL: https://raw.githubusercontent.com/srhady/tapmad-bd/refs/heads/main/tapmad_bd.m3u
+          CATEGORY_ID: tapmad
+          HASH_FILE: last_hash_tapmad.txt
+        run: python main.py
+
+      - name: Save last hash cache
+        uses: actions/cache/save@v4
+        if: success()
+        with:
+          path: last_hash_tapmad.txt
+          key: tapmad-sync-hash-${{ github.run_number }}

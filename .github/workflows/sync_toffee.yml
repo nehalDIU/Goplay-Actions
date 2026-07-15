@@ -1,0 +1,53 @@
+name: Sync Toffee Channels
+
+on:
+  schedule:
+    # Run every 1 hour (at minute 0 of every hour)
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    # Allow manual triggering of the workflow
+
+jobs:
+  sync:
+    name: Sync Toffee M3U to Supabase
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip' # Cache pip packages for faster runs
+
+      - name: Restore last hash cache
+        uses: actions/cache/restore@v4
+        with:
+          path: last_hash_toffee.txt
+          key: toffee-sync-hash-${{ github.run_number }}
+          restore-keys: |
+            toffee-sync-hash-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run synchronization script
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          ADMIN_SECRET_TOKEN: ${{ secrets.ADMIN_SECRET_TOKEN }}
+          M3U_URL: https://github.com/srhady/toffee-bd/raw/refs/heads/main/toffee_playlist.m3u
+          CATEGORY_ID: toffee
+          HASH_FILE: last_hash_toffee.txt
+        run: python main.py
+
+      - name: Save last hash cache
+        uses: actions/cache/save@v4
+        if: success() # Save the cache only if the sync succeeds
+        with:
+          path: last_hash_toffee.txt
+          key: toffee-sync-hash-${{ github.run_number }}
