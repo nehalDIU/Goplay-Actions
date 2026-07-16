@@ -1,7 +1,34 @@
 import re
+import base64
+from urllib.parse import urlparse, parse_qs
 from typing import List, Dict, Tuple, Optional
 from app.models import Channel
 from app.logger import logger
+
+def decode_base64_url(url: str) -> str:
+    """
+    Decodes the 'stream' base64 query parameter if present.
+    Returns the decoded URL if valid, otherwise the original URL.
+    """
+    try:
+        parsed = urlparse(url)
+        qs = parse_qs(parsed.query)
+        stream_param = qs.get("stream")
+        if not stream_param:
+            return url
+        
+        val = stream_param[0]
+        # Add padding if needed
+        missing_padding = len(val) % 4
+        if missing_padding:
+            val += '=' * (4 - missing_padding)
+            
+        decoded = base64.b64decode(val).decode('utf-8', errors='ignore')
+        if decoded.startswith('http://') or decoded.startswith('https://') or decoded.startswith('rtmp://') or decoded.startswith('rtsp://'):
+            return decoded
+    except Exception:
+        pass
+    return url
 
 # Regex to parse key="value" or key=value attributes
 ATTRIB_PATTERN = re.compile(r'([a-zA-Z0-9_-]+)="([^"]*)"|([a-zA-Z0-9_-]+)=([^\s,]*)')
@@ -124,19 +151,21 @@ def parse_m3u_playlist(content: str, default_category: str = "test-category") ->
         else:
             # This is a stream URL line
             if current_channel_info:
+                # Decode base64 stream URL if present
+                resolved_url = decode_base64_url(line)
                 channel_id = current_channel_info["id"]
                 
                 # Validate stream URL
-                if not (line.startswith("http://") or line.startswith("https://") or line.startswith("rtmp://") or line.startswith("rtsp://")):
+                if not (resolved_url.startswith("http://") or resolved_url.startswith("https://") or resolved_url.startswith("rtmp://") or resolved_url.startswith("rtsp://")):
                     logger.warning(
-                        f"Line {line_num}: Invalid stream URL '{line}' for channel "
+                        f"Line {line_num}: Invalid stream URL '{resolved_url}' for channel "
                         f"'{current_channel_info['name']}'. Skipping."
                     )
                     current_channel_info = None
                     continue
                 
                 if not channel_id:
-                    channel_id = generate_id_from_url_and_title(line, current_channel_info["name"])
+                    channel_id = generate_id_from_url_and_title(resolved_url, current_channel_info["name"])
                 
                 # Check for duplicate IDs
                 if channel_id in seen_ids:
@@ -153,7 +182,7 @@ def parse_m3u_playlist(content: str, default_category: str = "test-category") ->
                     name=current_channel_info["name"],
                     logo=current_channel_info["logo"] if current_channel_info["logo"] else None,
                     category=default_category,
-                    stream_url=line,
+                    stream_url=resolved_url,
                     sort_order=sort_order_counter,
                     # All other fields defaults are populated from Channel dataclass defaults
                 )
@@ -165,7 +194,6 @@ def parse_m3u_playlist(content: str, default_category: str = "test-category") ->
             else:
                 # Received URL without matching #EXTINF
                 logger.warning(f"Line {line_num}: Found URL '{line}' without preceding #EXTINF. Skipping.")
-                
     # Final check in case last #EXTINF did not have a URL
     if current_channel_info:
         logger.warning(
