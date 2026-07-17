@@ -69,13 +69,22 @@ def parse_attributes(attributes_part: str) -> Dict[str, str]:
         elif match[2]:  # key=value pattern
             attributes[match[2]] = match[3]
     return attributes
-def generate_id_from_url_and_title(stream_url: str, title: str) -> str:
+def generate_id_from_url_and_title(stream_url: str, title: str, category: Optional[str] = None) -> str:
     """
     Generates a unique channel ID when tvg-id is missing.
-    First tries to extract the filename from the stream URL (excluding extensions/params).
-    If generic, falls back to slugifying the channel title.
+    For the 'fancode' category (and as a fallback), it prioritizes slugifying the channel title
+    first to ensure the ID remains stable even when stream URLs change.
+    Otherwise, it extracts from the URL first, with a fallback to the title.
     """
-    # 1. Try to extract filename from URL
+    # 1. For fancode, prioritize the slugified title to ensure stability
+    if category == "fancode":
+        if title:
+            clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower()
+            clean_title = re.sub(r'[-\s]+', '-', clean_title)
+            if clean_title:
+                return f"fancode-{clean_title}"
+
+    # 2. Try to extract filename from URL
     try:
         path = stream_url.split('?')[0].split('#')[0]
         filename = path.split('/')[-1]
@@ -92,7 +101,7 @@ def generate_id_from_url_and_title(stream_url: str, title: str) -> str:
     except Exception:
         pass
         
-    # 2. Fallback: Slugify the title
+    # 3. Fallback: Slugify the title
     clean_title = re.sub(r'[^a-zA-Z0-9\s-]', '', title).strip().lower()
     clean_title = re.sub(r'[-\s]+', '-', clean_title)
     if not clean_title:
@@ -165,16 +174,18 @@ def parse_m3u_playlist(content: str, default_category: str = "test-category") ->
                     continue
                 
                 if not channel_id:
-                    channel_id = generate_id_from_url_and_title(resolved_url, current_channel_info["name"])
+                    channel_id = generate_id_from_url_and_title(resolved_url, current_channel_info["name"], category=default_category)
                 
-                # Check for duplicate IDs
+                # Check for duplicate IDs and resolve by appending suffix if needed
                 if channel_id in seen_ids:
+                    base_id = channel_id
+                    counter = 1
+                    while f"{base_id}-{counter}" in seen_ids:
+                        counter += 1
+                    channel_id = f"{base_id}-{counter}"
                     logger.warning(
-                        f"Line {line_num}: Duplicate 'tvg-id' '{channel_id}' found for "
-                        f"channel '{current_channel_info['name']}'. Skipping duplicate."
+                        f"Line {line_num}: Duplicate 'tvg-id' '{base_id}' resolved as '{channel_id}' for channel '{current_channel_info['name']}'."
                     )
-                    current_channel_info = None
-                    continue
                 
                 # Create Channel object with defaults
                 channel = Channel(
